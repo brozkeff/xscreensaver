@@ -1,0 +1,3 @@
+# Match the Debian and Ubuntu login policy used by distribution packages.
+@include common-auth
+@include common-account

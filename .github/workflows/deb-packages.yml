@@ -1,0 +1,200 @@
+name: Build Debian packages
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.suite }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - suite: jammy
+            image: ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02
+          - suite: noble
+            image: ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+          - suite: resolute
+            image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
+          - suite: trixie
+            image: debian:trixie@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c
+    steps:
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends autoconf automake build-essential devscripts equivs
+          DEBIAN_FRONTEND=noninteractive mk-build-deps --install --remove \
+            --tool 'apt-get -y --no-install-recommends' debian/control
+
+      - name: Build and validate package
+        id: package
+        run: bash packaging/build-deb.sh '${{ matrix.suite }}'
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deb-${{ matrix.suite }}-attempt-${{ github.run_attempt }}
+          path: ${{ steps.package.outputs.deb }}
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    # PRs cannot publish; failed suites must not suppress successful DEBs.
+    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' }}
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Count validated package artifacts
+        id: artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
+            --jq '.artifacts[].name' | \
+            awk -v attempt="$GITHUB_RUN_ATTEMPT" \
+              '$0 ~ ("^deb-(jammy|noble|resolute|trixie)-attempt-" attempt "$") { n++ } END { print n+0 }')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Validated package artifacts: $count" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: ${{ steps.artifacts.outputs.count != '0' }}
+        with:
+          pattern: deb-*-attempt-${{ github.run_attempt }}
+          path: packages
+          merge-multiple: false
+
+      - name: Publish successful packages as a GitHub pre-release
+        if: ${{ steps.artifacts.outputs.count != '0' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          version=$(sed -n 's/^#define XSCREENSAVER_VERSION "\([^"]*\)"/\1/p' utils/version.h)
+          test -n "$version"
+          base_version=$(sed -n '1s/^xscreensaver (\([^)]*\)).*/\1/p' debian/changelog)
+          test -n "$base_version"
+          tag="xscreensaver-${version}-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          validated_debs=()
+
+          {
+            printf 'Built from commit `%s` in [GitHub Actions](%s/%s/actions/runs/%s).\n\n' \
+              "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf '%s\n' 'Successful suites have attached DEBs; missing suites failed or did not upload an artifact:'
+            for suite in jammy noble resolute trixie; do
+              suite_debs=(packages/deb-"$suite"-attempt-"$GITHUB_RUN_ATTEMPT"/*.deb)
+              if (( ${#suite_debs[@]} == 0 )); then
+                printf '%s\n' "- $suite: no validated DEB"
+                continue
+              fi
+              test "${#suite_debs[@]}" -eq 1
+              case "$suite" in
+                jammy) suffix=ubuntu22.04.1 ;;
+                noble) suffix=ubuntu24.04.1 ;;
+                resolute) suffix=ubuntu26.04.1 ;;
+                trixie) suffix=deb13.1 ;;
+              esac
+              deb=${suite_debs[0]}
+              expected="xscreensaver_${base_version}+${suffix}_amd64.deb"
+              test "$(basename "$deb")" = "$expected"
+              test "$(dpkg-deb -f "$deb" Package)" = xscreensaver
+              test "$(dpkg-deb -f "$deb" Architecture)" = amd64
+              test "$(dpkg-deb -f "$deb" Version)" = "${base_version}+${suffix}"
+              validated_debs+=("$deb")
+              printf '%s\n' "- $suite: attached"
+            done
+            printf '\n%s\n' 'Prerelease: desktop lock/unlock has not been tested. This is not a signed APT repository.'
+          } > release-notes.md
+
+          test "${#validated_debs[@]}" -gt 0
+          for deb in "${validated_debs[@]}"; do
+            printf '%s  %s\n' "$(sha256sum "$deb" | cut -d' ' -f1)" "$(basename "$deb")"
+          done > SHA256SUMS
+
+          release_url=$(gh release create "$tag" "${validated_debs[@]}" SHA256SUMS \
+            --target "$GITHUB_SHA" \
+            --title "XScreenSaver $version CI packages" \
+            --notes-file release-notes.md \
+            --prerelease --latest=false)
+          echo "$release_url" >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    # Re-enable only after all target suites have passed in sequence.
+    if: ${{ false }}
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: deb-jammy-attempt-${{ github.run_attempt }}
+          path: packages/jammy
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: deb-noble-attempt-${{ github.run_attempt }}
+          path: packages/noble
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: deb-resolute-attempt-${{ github.run_attempt }}
+          path: packages/resolute
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: deb-trixie-attempt-${{ github.run_attempt }}
+          path: packages/trixie
+
+      - name: Build signed APT index
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apt-utils dpkg-dev gnupg
+          bash packaging/make-apt-repo.sh packages site
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        id: deployment
