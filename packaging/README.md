@@ -1,10 +1,10 @@
 # Debian and Ubuntu packages
 
-The intended targets are Ubuntu 22.04 (`jammy`), 24.04 (`noble`), 26.04
-(`resolute`), and Debian 13 (`trixie`), on amd64. The current test stage builds
-only `jammy`. Add one target at a time after the preceding target passes;
-builds must remain serial (`max-parallel: 1`). Each build runs inside its
-corresponding distribution container, checks the PAM file and setuid
+The targets are Ubuntu 22.04 (`jammy`), 24.04 (`noble`), 26.04 (`resolute`),
+and Debian 13 (`trixie`), on amd64. Ubuntu 22.04 passed first; the other
+targets are now enabled. Builds run serially (`max-parallel: 1`), and a failed
+target does not cancel later ones (`fail-fast: false`). Each build runs inside
+its corresponding distribution container, checks the PAM file and setuid
 authentication helper, and asks APT to simulate installation. The source is
 the checked-out commit of this fork; syncing the fork updates the source used
 by the next build.
@@ -22,13 +22,19 @@ first install on a real machine still needs a manual lock/unlock test.
 
 ## Build and publish
 
-The `Build Debian packages` workflow currently runs only the Ubuntu 22.04
-build on pushes to `master`, pull requests, and manual dispatch. Successful
-builds upload DEBs as workflow artifacts for inspection. Publishing is
-disabled during staged validation. Once all four targets pass serially,
-re-enable the manual publish job and review the resulting packages.
+The `Build Debian packages` workflow runs all four suites on pushes to
+`master`, pull requests, and manual dispatch. Successful builds upload DEBs
+as workflow artifacts. On `master` only, a separate job creates a GitHub
+pre-release with every DEB uploaded in that run attempt, plus `SHA256SUMS`.
+The notes identify missing suites when some builds fail. Reruns have their
+own release tag and do not overwrite earlier release assets. Pull requests
+never publish releases. These DEBs have not passed a desktop lock/unlock test.
 
-When all target builds pass, enable publishing:
+The signed APT repository on GitHub Pages is still disabled; a GitHub release
+is not a signed APT repository. Re-enable Pages publishing only after all
+target suites pass and the packages are reviewed.
+
+When all target builds pass, enable APT publishing:
 
 1. Retain an encrypted offline backup of the dedicated archive signing key.
 2. Add its ASCII-armored private key as the repository secret
@@ -37,17 +43,20 @@ When all target builds pass, enable publishing:
    `6EFF 589C 3E04 7675 3521 1806 4F16 B127 AAA5 9C6D`.
 3. In the fork's GitHub Pages settings, choose **GitHub Actions** as the
    publishing source.
-4. Dispatch the workflow from the reviewed `master` commit with `publish`
-   enabled.
+4. Restore the guarded Pages publish condition and its manual `publish`
+   input, then dispatch from the reviewed `master` commit.
 
 The published site is an APT repository with `dists/{jammy,noble,resolute,trixie}`
 and a public key at `xscreensaver-archive-key.asc`. Verify that public key's
 fingerprint before trusting the repository. A client uses its own suite:
 
 ```sh
-curl -fsSL https://brozkeff.github.io/xscreensaver/xscreensaver-archive-key.asc \
-  | sudo tee /usr/share/keyrings/xscreensaver-archive-key.asc >/dev/null
-echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/xscreensaver-archive-key.asc] https://brozkeff.github.io/xscreensaver jammy main' \
+repo=https://brozkeff.github.io/xscreensaver
+keyring=/usr/share/keyrings/xscreensaver-archive-key.asc
+curl -fsSL "$repo/xscreensaver-archive-key.asc" \
+  | sudo tee "$keyring" >/dev/null
+echo "deb [arch=amd64 signed-by=$keyring]" \
+  "$repo jammy main" \
   | sudo tee /etc/apt/sources.list.d/brozkeff-xscreensaver.list
 sudo apt update
 sudo apt install xscreensaver

@@ -54,3 +54,6 @@ apt-get -s install "$deb"
 
 mkdir -p "dist/$suite"
 cp "$deb" "dist/$suite/"
+if [[ -n ${GITHUB_OUTPUT:-} ]]; then
+  printf 'deb=%s\n' "$PWD/dist/$suite/$(basename "$deb")" >> "$GITHUB_OUTPUT"
+fi
