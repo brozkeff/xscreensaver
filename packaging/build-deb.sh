@@ -42,9 +42,14 @@ deb=$(realpath "../xscreensaver_${base_version}+${suffix}_amd64.deb")
 test -f "$deb"
 test "$(dpkg-deb -f "$deb" Architecture)" = amd64
 test "$(dpkg-deb -f "$deb" Version)" = "${base_version}+${suffix}"
-dpkg-deb --fsys-tarfile "$deb" | tar -xOf - ./etc/pam.d/xscreensaver | \
-  cmp - packaging/xscreensaver.pam
-dpkg-deb -c "$deb" | grep -Eq '^-rwsr-xr-x .* ./usr/libexec/xscreensaver/xscreensaver-auth$'
+validation_dir=$(mktemp -d)
+readonly validation_dir
+trap 'rm -rf -- "$validation_dir"' EXIT
+dpkg-deb --extract "$deb" "$validation_dir"
+cmp "$validation_dir/etc/pam.d/xscreensaver" packaging/xscreensaver.pam
+auth_helper="$validation_dir/usr/libexec/xscreensaver/xscreensaver-auth"
+test -f "$auth_helper" && test ! -L "$auth_helper"
+test "$(stat -c '%u:%a' "$auth_helper")" = '0:4755'
 apt-get -s install "$deb"
 
 mkdir -p "dist/$suite"
