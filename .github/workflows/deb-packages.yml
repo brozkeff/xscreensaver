@@ -5,12 +5,6 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
-    inputs:
-      publish:
-        description: Publish signed APT repository to GitHub Pages
-        required: true
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -22,16 +16,11 @@ jobs:
     container: ${{ matrix.image }}
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - suite: jammy
             image: ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02
-          - suite: noble
-            image: ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
-          - suite: resolute
-            image: ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
-          - suite: trixie
-            image: debian:trixie@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c
     steps:
       - name: Install checkout prerequisites
         run: |
@@ -59,7 +48,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/master'
+    # Re-enable only after all target suites have passed in sequence.
+    if: ${{ false }}
     needs: build
     runs-on: ubuntu-24.04
     environment:

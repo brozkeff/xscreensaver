@@ -28,7 +28,10 @@ language. Preserve upstream files when syncing the fork.
 
 The following versions and immutable SHA-256/commit pins were checked on
 2026-09-24. The workflow in `.github/workflows/deb-packages.yml` is the source
-of truth; update this ledger whenever its pins change.
+of truth for active pins; update this ledger whenever its pins change. The
+Ubuntu 24.04, Ubuntu 26.04, and Debian 13 image pins were prepared on that
+date but removed from the active matrix for serial, one-suite-at-a-time
+validation. Recheck their digests before restoring those targets.
 
 | Dependency | Version/tag | Pinned SHA |
 | --- | --- | --- |

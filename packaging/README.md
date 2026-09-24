@@ -1,11 +1,13 @@
 # Debian and Ubuntu packages
 
-This fork builds XScreenSaver's upstream single-package Debian format for
-Ubuntu 22.04 (`jammy`), 24.04 (`noble`), 26.04 (`resolute`), and Debian 13
-(`trixie`), on amd64. Each job builds inside the corresponding distribution
-container, checks the PAM file and setuid authentication helper, and asks APT
-to simulate installation. The source is the checked-out commit of this fork;
-syncing the fork updates the source used by the next build.
+The intended targets are Ubuntu 22.04 (`jammy`), 24.04 (`noble`), 26.04
+(`resolute`), and Debian 13 (`trixie`), on amd64. The current test stage builds
+only `jammy`. Add one target at a time after the preceding target passes;
+builds must remain serial (`max-parallel: 1`). Each build runs inside its
+corresponding distribution container, checks the PAM file and setuid
+authentication helper, and asks APT to simulate installation. The source is
+the checked-out commit of this fork; syncing the fork updates the source used
+by the next build.
 
 The build overlays the distribution PAM policy from `packaging/xscreensaver.pam`
 and changes package maintainer metadata during CI. These changes are kept out
@@ -16,12 +18,13 @@ first install on a real machine still needs a manual lock/unlock test.
 
 ## Build and publish
 
-The `Build Debian packages` workflow runs all four builds on pushes to
-`master`, pull requests, and manual dispatch. Successful builds upload DEBs
-as workflow artifacts for inspection. Publishing is a separate manual dispatch
-with `publish` enabled, after the packages have been reviewed.
+The `Build Debian packages` workflow currently runs only the Ubuntu 22.04
+build on pushes to `master`, pull requests, and manual dispatch. Successful
+builds upload DEBs as workflow artifacts for inspection. Publishing is
+disabled during staged validation. Once all four targets pass serially,
+re-enable the manual publish job and review the resulting packages.
 
-To enable publishing:
+When all target builds pass, enable publishing:
 
 1. Retain an encrypted offline backup of the dedicated archive signing key.
 2. Add its ASCII-armored private key as the repository secret
