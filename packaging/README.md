@@ -1,0 +1,49 @@
+# Debian and Ubuntu packages
+
+This fork builds XScreenSaver's upstream single-package Debian format for
+Ubuntu 22.04 (`jammy`), 24.04 (`noble`), 26.04 (`resolute`), and Debian 13
+(`trixie`), on amd64. Each job builds inside the corresponding distribution
+container, checks the PAM file and setuid authentication helper, and asks APT
+to simulate installation. The source is the checked-out commit of this fork;
+syncing the fork updates the source used by the next build.
+
+The build overlays the distribution PAM policy from `packaging/xscreensaver.pam`
+and changes package maintainer metadata during CI. These changes are kept out
+of upstream files so later fork syncs can merge cleanly. Upstream's package
+combines the binaries and display modes and declares that it replaces the
+older distribution `xscreensaver-data` and `xscreensaver-gl` packages. The
+first install on a real machine still needs a manual lock/unlock test.
+
+## Build and publish
+
+The `Build Debian packages` workflow runs all four builds on pushes to
+`master`, pull requests, and manual dispatch. Successful builds upload DEBs
+as workflow artifacts for inspection. Publishing is a separate manual dispatch
+with `publish` enabled, after the packages have been reviewed.
+
+To enable publishing:
+
+1. Generate a dedicated GPG signing key and retain an offline backup.
+2. Add its ASCII-armored private key as the repository secret
+   `APT_SIGNING_KEY`.
+3. In the fork's GitHub Pages settings, choose **GitHub Actions** as the
+   publishing source.
+4. Dispatch the workflow from the reviewed `master` commit with `publish`
+   enabled.
+
+The published site is an APT repository with `dists/{jammy,noble,resolute,trixie}`
+and a public key at `xscreensaver-archive-key.asc`. A client uses its own suite:
+
+```sh
+curl -fsSL https://brozkeff.github.io/xscreensaver/xscreensaver-archive-key.asc \
+  | sudo tee /usr/share/keyrings/xscreensaver-archive-key.asc >/dev/null
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/xscreensaver-archive-key.asc] https://brozkeff.github.io/xscreensaver jammy main' \
+  | sudo tee /etc/apt/sources.list.d/brozkeff-xscreensaver.list
+sudo apt update
+sudo apt install xscreensaver
+```
+
+Replace `jammy` with the matching suite on the other distributions. These
+commands apply only after a signed repository has been published. Existing
+XScreenSaver users should verify their unlock method immediately after an
+upgrade while they still have an active session.
