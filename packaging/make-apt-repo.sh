@@ -4,6 +4,8 @@ set -euo pipefail
 packages=${1:?Usage: packaging/make-apt-repo.sh PACKAGES_DIR OUTPUT_DIR}
 output=${2:?Usage: packaging/make-apt-repo.sh PACKAGES_DIR OUTPUT_DIR}
 : "${APT_SIGNING_KEY:?APT_SIGNING_KEY must contain an ASCII-armored private key}"
+public_key=$(realpath "$(dirname "$0")/xscreensaver-archive-key.asc")
+expected_fingerprint=6EFF589C3E047675352118064F16B127AAA59C6D
 
 mkdir -p "$output"
 output=$(realpath "$output")
@@ -13,11 +15,22 @@ umask 022
 export GNUPGHOME
 GNUPGHOME=$(mktemp -d)
 chmod 700 "$GNUPGHOME"
+cleanup() {
+  gpgconf --homedir "$GNUPGHOME" --kill gpg-agent >/dev/null 2>&1 || true
+  rm -rf -- "$GNUPGHOME"
+}
+trap cleanup EXIT
 
 # GitHub Actions provides a fresh machine; do not persist the imported key.
 printf '%s\n' "$APT_SIGNING_KEY" | gpg --batch --import
 fingerprint=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')
-test -n "$fingerprint"
+public_fingerprint=$(gpg --batch --with-colons --show-keys "$public_key" | \
+  awk -F: '$1 == "fpr" { print $10; exit }')
+if [[ "$fingerprint" != "$expected_fingerprint" || \
+      "$public_fingerprint" != "$expected_fingerprint" ]]; then
+  echo 'The signing secret and committed public key do not match the expected fingerprint' >&2
+  exit 1
+fi
 gpg --batch --armor --export "$fingerprint" > xscreensaver-archive-key.asc
 touch .nojekyll
 

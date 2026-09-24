@@ -23,16 +23,19 @@ with `publish` enabled, after the packages have been reviewed.
 
 To enable publishing:
 
-1. Generate a dedicated GPG signing key and retain an offline backup.
+1. Retain an encrypted offline backup of the dedicated archive signing key.
 2. Add its ASCII-armored private key as the repository secret
-   `APT_SIGNING_KEY`.
+   `APT_SIGNING_KEY`. The build checks that it matches the committed public
+   key at `packaging/xscreensaver-archive-key.asc`, fingerprint
+   `6EFF 589C 3E04 7675 3521 1806 4F16 B127 AAA5 9C6D`.
 3. In the fork's GitHub Pages settings, choose **GitHub Actions** as the
    publishing source.
 4. Dispatch the workflow from the reviewed `master` commit with `publish`
    enabled.
 
 The published site is an APT repository with `dists/{jammy,noble,resolute,trixie}`
-and a public key at `xscreensaver-archive-key.asc`. A client uses its own suite:
+and a public key at `xscreensaver-archive-key.asc`. Verify that public key's
+fingerprint before trusting the repository. A client uses its own suite:
 
 ```sh
 curl -fsSL https://brozkeff.github.io/xscreensaver/xscreensaver-archive-key.asc \
