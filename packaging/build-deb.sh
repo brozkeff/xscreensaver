@@ -26,6 +26,16 @@ export DEBEMAIL=brozkeff@users.noreply.github.com
 dch --newversion "${base_version}+${suffix}" --distribution "$suite" \
   "Rebuild upstream XScreenSaver for $suite."
 
+# The mirrored configure currently contains an unexpanded gettext macro.
+# Debian rules disable dh_autoreconf, so regenerate it inside CI before build.
+aclocal
+autoconf
+autoheader
+if grep -Fq 'AM_GNU_GETTEXT(external)' configure; then
+  echo 'configure still contains an unexpanded gettext macro' >&2
+  exit 1
+fi
+
 dpkg-buildpackage -b -us -uc -j2
 
 deb=$(realpath "../xscreensaver_${base_version}+${suffix}_amd64.deb")

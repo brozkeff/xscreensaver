@@ -9,6 +9,10 @@ authentication helper, and asks APT to simulate installation. The source is
 the checked-out commit of this fork; syncing the fork updates the source used
 by the next build.
 
+The mirrored `configure` currently has an unexpanded gettext macro. The CI
+build regenerates it with Autotools before packaging; nothing is regenerated
+on the local workstation.
+
 The build overlays the distribution PAM policy from `packaging/xscreensaver.pam`
 and changes package maintainer metadata during CI. These changes are kept out
 of upstream files so later fork syncs can merge cleanly. Upstream's package

@@ -33,7 +33,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential devscripts equivs
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends autoconf automake build-essential devscripts equivs
           DEBIAN_FRONTEND=noninteractive mk-build-deps --install --remove \
             --tool 'apt-get -y --no-install-recommends' debian/control
 
