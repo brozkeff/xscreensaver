@@ -40,8 +40,18 @@ jobs:
       - name: Install build dependencies
         run: |
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends autoconf automake build-essential devscripts equivs
-          DEBIAN_FRONTEND=noninteractive mk-build-deps --install --remove \
-            --tool 'apt-get -y --no-install-recommends' debian/control
+          # Ubuntu mirrors can briefly serve indexes for packages already removed.
+          for attempt in 1 2 3; do
+            if DEBIAN_FRONTEND=noninteractive mk-build-deps --install --remove \
+              --tool 'apt-get -y --no-install-recommends' debian/control; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            apt-get update
+            sleep 10
+          done
 
       - name: Build and validate package
         id: package
